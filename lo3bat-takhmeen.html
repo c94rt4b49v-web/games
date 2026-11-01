@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>خمّن الرقم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap">
+<style>
+:root{
+  --bg:#eef3f8; --card:#ffffff; --ink:#12263a; --muted:#5d7288;
+  --accent:#2f6fed; --accent-ink:#ffffff; --track:#d6e0eb; --range:#2f6fed;
+  --good:#1f9d63; --bad:#d6453d; --chip:#e4ecf5;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1a29; --card:#16263a; --ink:#e8f0f8; --muted:#8ea5bd;
+    --accent:#5b93ff; --accent-ink:#0a1624; --track:#27405c; --range:#5b93ff;
+    --good:#3ccf8e; --bad:#ff7a70; --chip:#21364f;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1a29; --card:#16263a; --ink:#e8f0f8; --muted:#8ea5bd;
+  --accent:#5b93ff; --accent-ink:#0a1624; --track:#27405c; --range:#5b93ff;
+  --good:#3ccf8e; --bad:#ff7a70; --chip:#21364f;
+  color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Tajawal",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;
+  min-height:100vh; display:flex; justify-content:center; padding:20px 16px;
+}
+main{width:100%; max-width:420px; display:flex; flex-direction:column; gap:16px}
+h1{margin:4px 0 0; font-size:2rem; font-weight:900; text-align:center}
+.sub{margin:0; text-align:center; color:var(--muted)}
+.card{background:var(--card); border-radius:20px; padding:20px; display:flex; flex-direction:column; gap:16px}
+.hint{min-height:2.6em; text-align:center; font-size:1.25rem; font-weight:700; line-height:1.3}
+.hint.good{color:var(--good)} .hint.bad{color:var(--bad)}
+.scale{direction:ltr}
+.track{position:relative; height:14px; background:var(--track); border-radius:99px; overflow:hidden}
+.fill{position:absolute; top:0; bottom:0; background:var(--range); border-radius:99px; transition:left .35s ease,width .35s ease}
+.ends{display:flex; justify-content:space-between; margin-top:6px; font-weight:700; font-size:.95rem}
+.ends span:nth-child(2){color:var(--muted); font-weight:400}
+.row{display:flex; gap:10px}
+input{
+  flex:1; min-width:0; font:inherit; font-size:1.5rem; font-weight:700; text-align:center;
+  padding:12px; border-radius:14px; border:2px solid var(--track);
+  background:transparent; color:var(--ink);
+}
+input:focus-visible,button:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+button{
+  font:inherit; font-weight:700; font-size:1.15rem; border:0; cursor:pointer;
+  padding:12px 22px; border-radius:14px; background:var(--accent); color:var(--accent-ink);
+}
+button:disabled{opacity:.45; cursor:default}
+.lives{display:flex; justify-content:center; gap:8px}
+.dot{width:14px; height:14px; border-radius:50%; background:var(--accent); transition:background .2s,transform .2s}
+.dot.off{background:var(--track); transform:scale(.7)}
+.chips{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; min-height:34px}
+.chip{background:var(--chip); padding:4px 14px; border-radius:99px; font-weight:700}
+.again{display:none; background:var(--ink); color:var(--bg)}
+@media (prefers-reduced-motion:reduce){.fill,.dot{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>خمّن الرقم</h1>
+    <p style="margin:2px 0 6px;text-align:center;color:var(--muted);font-size:.9rem;font-weight:700">المصمم: محمد عبدالله العمري</p>
+    <p class="sub">فكّرت في رقم من 1 إلى 100. عندك 7 محاولات.</p>
+  </div>
+  <section class="card">
+    <div class="hint" id="hint" aria-live="polite">اكتب أول تخمينك</div>
+    <div class="scale" aria-hidden="true">
+      <div class="track"><div class="fill" id="fill"></div></div>
+      <div class="ends"><span id="lo">1</span><span>المدى المتبقي</span><span id="hi">100</span></div>
+    </div>
+    <div class="row">
+      <input id="guess" type="text" inputmode="numeric" autocomplete="off" placeholder="؟" aria-label="تخمينك">
+      <button id="go">خمّن</button>
+    </div>
+    <div class="lives" id="lives" aria-label="المحاولات المتبقية"></div>
+    <div class="chips" id="chips"></div>
+    <button class="again" id="again">العب من جديد</button>
+  </section>
+</main>
+<script>
+(function(){
+  var MAX=100, TRIES=7;
+  var secret, lo, hi, left, over;
+  var $=function(id){return document.getElementById(id)};
+  var hint=$("hint"), fill=$("fill"), loEl=$("lo"), hiEl=$("hi"),
+      input=$("guess"), go=$("go"), lives=$("lives"), chips=$("chips"), again=$("again");
+
+  function normalize(s){
+    return s.replace(/[٠-٩]/g,function(d){return d.charCodeAt(0)-1632})
+            .replace(/[۰-۹]/g,function(d){return d.charCodeAt(0)-1776});
+  }
+  function say(t,cls){hint.textContent=t; hint.className="hint"+(cls?" "+cls:"")}
+  function draw(){
+    var a=(lo-1)/MAX*100, b=hi/MAX*100;
+    fill.style.left=a+"%"; fill.style.width=(b-a)+"%";
+    loEl.textContent=lo; hiEl.textContent=hi;
+    lives.innerHTML="";
+    for(var i=0;i<TRIES;i++){
+      var d=document.createElement("span");
+      d.className="dot"+(i>=left?" off":"");
+      lives.appendChild(d);
+    }
+  }
+  function start(){
+    secret=Math.floor(Math.random()*MAX)+1;
+    lo=1; hi=MAX; left=TRIES; over=false;
+    chips.innerHTML=""; input.value=""; input.disabled=false; go.disabled=false;
+    again.style.display="none";
+    say("اكتب أول تخمينك");
+    draw(); input.focus();
+  }
+  function finish(win){
+    over=true; input.disabled=true; go.disabled=true;
+    again.style.display="block";
+    if(win){say("أحسنت! الرقم هو "+secret+" 🎉","good")}
+    else{say("خلصت المحاولات. الرقم كان "+secret,"bad")}
+  }
+  function play(){
+    if(over) return;
+    var n=parseInt(normalize(input.value.trim()),10);
+    if(isNaN(n)||n<1||n>MAX){say("اكتب رقماً من 1 إلى "+MAX,"bad"); input.select(); return}
+    if(n<lo||n>hi){say("هذا الرقم خارج المدى المتبقي، جرّب رقماً بين "+lo+" و"+hi,"bad"); input.select(); return}
+    left--;
+    var c=document.createElement("span"); c.className="chip"; c.textContent=n; chips.appendChild(c);
+    if(n===secret){draw(); finish(true); return}
+    if(n<secret){lo=n+1; say("الرقم أكبر من "+n)}
+    else{hi=n-1; say("الرقم أصغر من "+n)}
+    draw();
+    if(left===0){finish(false); return}
+    input.value=""; input.focus();
+  }
+  go.addEventListener("click",play);
+  input.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault(); play()}});
+  again.addEventListener("click",start);
+  start();
+})();
+</script>
+</body>
+</html>

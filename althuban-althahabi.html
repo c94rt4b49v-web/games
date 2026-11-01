@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>الثعبان الذهبي</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap">
+<style>
+:root{
+  --bg:#e6f2ee; --card:#ffffff; --ink:#0f2e29; --muted:#55746d;
+  --board:#d3e7e0; --grid:#c4ddd5; --snake:#0f8f6b; --head:#07674c;
+  --food:#e8503a; --star:#f2a900; --wall:#3a4f59; --accent:#0f8f6b; --accent-ink:#ffffff;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0a1816; --card:#122824; --ink:#e4f3ef; --muted:#86a8a0;
+    --board:#0f2723; --grid:#173630; --snake:#34d3a0; --head:#8cf0cf;
+    --food:#ff6b55; --star:#ffc933; --wall:#6d8794; --accent:#34d3a0; --accent-ink:#06201a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a1816; --card:#122824; --ink:#e4f3ef; --muted:#86a8a0;
+  --board:#0f2723; --grid:#173630; --snake:#34d3a0; --head:#8cf0cf;
+  --food:#ff6b55; --star:#ffc933; --wall:#6d8794; --accent:#34d3a0; --accent-ink:#06201a;
+  color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;justify-content:center;
+  font-family:"Tajawal",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:14px 12px}
+main{width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:1.6rem;font-weight:900;text-align:center}
+.hud{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat{background:var(--card);border-radius:14px;padding:8px 4px;text-align:center}
+.stat b{display:block;font-size:1.3rem;font-weight:900}
+.stat span{font-size:.8rem;color:var(--muted)}
+.board{position:relative;border-radius:18px;overflow:hidden;background:var(--board)}
+canvas{display:block;width:100%;touch-action:none}
+.over{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;text-align:center;padding:20px;background:rgba(10,24,22,.72);color:#fff}
+.over.hide{display:none}
+.over h2{margin:0;font-size:1.7rem;font-weight:900}
+.over p{margin:0;line-height:1.5}
+button{font:inherit;font-weight:700;border:0;cursor:pointer;border-radius:14px;background:var(--accent);color:var(--accent-ink)}
+button:focus-visible{outline:3px solid var(--star);outline-offset:2px}
+.big{font-size:1.2rem;padding:12px 30px}
+.pad{direction:ltr;display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,56px);gap:8px;justify-content:center}
+.pad button{background:var(--card);color:var(--ink);font-size:1.4rem}
+.pad button:active{background:var(--accent);color:var(--accent-ink)}
+.pad .u{grid-column:2;grid-row:1}.pad .l{grid-column:1;grid-row:2}.pad .d{grid-column:2;grid-row:2}.pad .r{grid-column:3;grid-row:2}
+.pad .p{grid-column:3;grid-row:1;font-size:1rem}
+.tip{margin:0;text-align:center;color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>الثعبان الذهبي</h1>
+  <p style="margin:-6px 0 0;text-align:center;color:var(--muted);font-size:.9rem;font-weight:700">المصمم: محمد عبدالله العمري</p>
+  <div class="hud">
+    <div class="stat"><b id="sc">0</b><span>النقاط</span></div>
+    <div class="stat"><b id="lv">1</b><span>المستوى</span></div>
+    <div class="stat"><b id="lf">❤️❤️❤️</b><span>القلوب</span></div>
+    <div class="stat"><b id="bs">0</b><span>الأفضل</span></div>
+  </div>
+  <div class="board" id="board">
+    <canvas id="c" aria-label="لوحة اللعب"></canvas>
+    <div class="over" id="ov"><h2 id="ot"></h2><p id="op"></p><button class="big" id="ob"></button></div>
+  </div>
+  <div class="pad">
+    <button class="u" data-d="u" aria-label="أعلى">▲</button>
+    <button class="l" data-d="l" aria-label="يسار">◀</button>
+    <button class="d" data-d="d" aria-label="أسفل">▼</button>
+    <button class="r" data-d="r" aria-label="يمين">▶</button>
+    <button class="p" id="pz">إيقاف</button>
+  </div>
+  <p class="tip">كل 5 تفاحات ينتقل المستوى وتظهر جدران جديدة. النجمة الذهبية تعطيك 50 نقطة. الأطراف تنقلك للجهة المقابلة.</p>
+</main>
+<script>
+(function(){
+  var N=18, $=function(i){return document.getElementById(i)};
+  var cv=$("c"), ctx=cv.getContext("2d"), size=0, cell=0;
+  var snake,dir,queue,food,star,walls,score,level,eaten,lives,best=0,state="idle",timer=null;
+  var DIRS={u:{x:0,y:-1},d:{x:0,y:1},l:{x:-1,y:0},r:{x:1,y:0}};
+  try{best=parseInt(localStorage.getItem("thuban-best"),10)||0}catch(e){}
+
+  function col(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+  function resize(){
+    var w=Math.min($("board").clientWidth,420), d=window.devicePixelRatio||1;
+    cv.width=w*d; cv.height=w*d; ctx.setTransform(d,0,0,d,0,0);
+    size=w; cell=w/N; draw();
+  }
+  function isFree(x,y){
+    if(snake.some(function(s){return s.x===x&&s.y===y})) return false;
+    if(walls.some(function(s){return s.x===x&&s.y===y})) return false;
+    if(food&&food.x===x&&food.y===y) return false;
+    if(star&&star.x===x&&star.y===y) return false;
+    return true;
+  }
+  function randFree(minDist){
+    for(var i=0;i<400;i++){
+      var x=Math.floor(Math.random()*N), y=Math.floor(Math.random()*N);
+      if(!isFree(x,y)) continue;
+      if(minDist&&Math.abs(x-snake[0].x)+Math.abs(y-snake[0].y)<minDist) continue;
+      return {x:x,y:y};
+    }
+    return null;
+  }
+  function resetSnake(){
+    snake=[{x:9,y:9},{x:8,y:9},{x:7,y:9}];
+    walls=walls.filter(function(w){return !(w.y>=8&&w.y<=10&&w.x>=3&&w.x<=13)});
+    dir=DIRS.r; queue=[]; star=null; food=null; food=randFree(0);
+  }
+  function newGame(){
+    score=0; level=1; eaten=0; lives=3; walls=[]; resetSnake(); hud();
+  }
+  function hud(){
+    $("sc").textContent=score; $("lv").textContent=level; $("bs").textContent=best;
+    var h=""; for(var i=0;i<lives;i++) h+="❤️"; $("lf").textContent=h||"—";
+  }
+  function speed(){return Math.max(65,150-(level-1)*12)}
+  function show(t,p,b){$("ot").textContent=t;$("op").textContent=p;$("ob").textContent=b;$("ov").classList.remove("hide")}
+  function hide(){$("ov").classList.add("hide")}
+
+  function addWalls(n){
+    for(var i=0;i<n&&walls.length<26;i++){var c=randFree(6); if(c) walls.push(c)}
+  }
+  function lose(){
+    lives--; state="dead"; clearTimeout(timer);
+    if(score>best){best=score; try{localStorage.setItem("thuban-best",String(best))}catch(e){}}
+    hud();
+    if(lives<=0){
+      show("انتهت اللعبة","نقاطك "+score+" ووصلت المستوى "+level+(score>=best&&score>0?". رقم قياسي جديد! 🏆":""),"العب من جديد");
+      state="over";
+    }else{
+      resetSnake();
+      show("اصطدمت!","باقي لك "+lives+(lives===1?" قلب واحد":" قلوب"),"تابع");
+    }
+    draw();
+  }
+  function step(){
+    if(queue.length) dir=queue.shift();
+    var h={x:(snake[0].x+dir.x+N)%N,y:(snake[0].y+dir.y+N)%N};
+    var body=snake.slice(0,snake.length-1);
+    if(walls.some(function(w){return w.x===h.x&&w.y===h.y})||body.some(function(s){return s.x===h.x&&s.y===h.y})){lose();return false}
+    snake.unshift(h);
+    if(food&&h.x===food.x&&h.y===food.y){
+      score+=10*level; eaten++; food=null; food=randFree(0);
+      if(!star&&Math.random()<0.3){var s=randFree(0); if(s){star={x:s.x,y:s.y,t:45}}}
+      if(eaten%5===0){level++; addWalls(3)}
+    }else if(star&&h.x===star.x&&h.y===star.y){
+      score+=50; star=null;
+    }else{
+      snake.pop();
+    }
+    if(star){star.t--; if(star.t<=0) star=null}
+    if(score>best){best=score}
+    hud(); return true;
+  }
+  function loop(){
+    if(state!=="run") return;
+    if(step()){draw(); timer=setTimeout(loop,speed())}
+  }
+  function start(){
+    if(state==="over"||state==="idle"&&!snake){newGame()}
+    hide(); state="run"; $("pz").textContent="إيقاف"; clearTimeout(timer); timer=setTimeout(loop,speed());
+  }
+  function pause(){
+    if(state==="run"){state="paused"; clearTimeout(timer); show("متوقفة","خذ راحتك، اللعبة تنتظرك","تابع")}
+  }
+  function turn(k){
+    var d=DIRS[k]; if(!d) return;
+    if(state!=="run") return;
+    var last=queue.length?queue[queue.length-1]:dir;
+    if(d.x===-last.x&&d.y===-last.y) return;
+    if(d.x===last.x&&d.y===last.y) return;
+    if(queue.length<2) queue.push(d);
+  }
+
+  function rr(x,y,s,r,fill){
+    ctx.fillStyle=fill; ctx.beginPath();
+    if(ctx.roundRect){ctx.roundRect(x,y,s,s,r)}else{ctx.rect(x,y,s,s)}
+    ctx.fill();
+  }
+  function draw(){
+    if(!snake) return;
+    ctx.clearRect(0,0,size,size);
+    ctx.fillStyle=col("--board"); ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle=col("--grid"); ctx.lineWidth=1; ctx.beginPath();
+    for(var i=1;i<N;i++){ctx.moveTo(i*cell,0);ctx.lineTo(i*cell,size);ctx.moveTo(0,i*cell);ctx.lineTo(size,i*cell)}
+    ctx.stroke();
+    var pad=cell*0.06, s=cell-pad*2;
+    var cw=col("--wall"); walls.forEach(function(w){rr(w.x*cell+pad,w.y*cell+pad,s,cell*0.18,cw)});
+    if(food){
+      ctx.fillStyle=col("--food"); ctx.beginPath();
+      ctx.arc(food.x*cell+cell/2,food.y*cell+cell/2+cell*0.04,cell*0.36,0,7); ctx.fill();
+      ctx.fillStyle=col("--snake"); ctx.fillRect(food.x*cell+cell/2-1,food.y*cell+cell*0.1,2,cell*0.2);
+    }
+    if(star){
+      var blink=star.t<14&&star.t%2===0;
+      if(!blink){
+        ctx.fillStyle=col("--star"); ctx.font="bold "+(cell*0.95)+"px sans-serif";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText("★",star.x*cell+cell/2,star.y*cell+cell/2+cell*0.05);
+      }
+    }
+    var cs=col("--snake"), ch=col("--head");
+    for(var k=snake.length-1;k>=0;k--){
+      var p=snake[k]; rr(p.x*cell+pad,p.y*cell+pad,s,cell*(k===0?0.35:0.28),k===0?ch:cs);
+    }
+    var hd=snake[0], ex=dir.x*cell*0.12, ey=dir.y*cell*0.12, cx=hd.x*cell+cell/2+ex, cy=hd.y*cell+cell/2+ey;
+    var ox=dir.y!==0?cell*0.17:0, oy=dir.x!==0?cell*0.17:0;
+    ctx.fillStyle="#fff"; ctx.beginPath();
+    ctx.arc(cx-ox,cy-oy,cell*0.1,0,7); ctx.arc(cx+ox,cy+oy,cell*0.1,0,7); ctx.fill();
+    ctx.fillStyle="#10201c"; ctx.beginPath();
+    ctx.arc(cx-ox+dir.x*2,cy-oy+dir.y*2,cell*0.05,0,7); ctx.arc(cx+ox+dir.x*2,cy+oy+dir.y*2,cell*0.05,0,7); ctx.fill();
+  }
+
+  $("ob").addEventListener("click",function(){
+    if(state==="dead"||state==="paused"||state==="over"||state==="idle"){
+      if(state==="dead"||state==="paused"){hide(); state="run"; $("pz").textContent="إيقاف"; clearTimeout(timer); timer=setTimeout(loop,speed())}
+      else{newGame(); start()}
+    }
+  });
+  $("pz").addEventListener("click",pause);
+  document.querySelectorAll(".pad [data-d]").forEach(function(b){
+    b.addEventListener("click",function(){turn(b.getAttribute("data-d"))});
+  });
+  document.addEventListener("keydown",function(e){
+    var m={ArrowUp:"u",ArrowDown:"d",ArrowLeft:"l",ArrowRight:"r",w:"u",s:"d",a:"l",d:"r"};
+    if(m[e.key]){e.preventDefault(); turn(m[e.key])}
+    else if(e.key===" "){e.preventDefault(); if(state==="run") pause(); else $("ob").click()}
+  });
+  var tx=0,ty=0;
+  cv.addEventListener("touchstart",function(e){var t=e.touches[0]; tx=t.clientX; ty=t.clientY},{passive:true});
+  cv.addEventListener("touchend",function(e){
+    var t=e.changedTouches[0], dx=t.clientX-tx, dy=t.clientY-ty;
+    if(Math.max(Math.abs(dx),Math.abs(dy))<20) return;
+    turn(Math.abs(dx)>Math.abs(dy)?(dx>0?"r":"l"):(dy>0?"d":"u"));
+  },{passive:true});
+  document.addEventListener("visibilitychange",function(){if(document.hidden) pause()});
+  window.addEventListener("resize",resize);
+
+  newGame(); resize();
+  show("الثعبان الذهبي","اجمع التفاحات وتجنب الجدران وجسمك. اسحب على اللوحة أو استخدم الأسهم.","ابدأ");
+  state="idle";
+})();
+</script>
+</body>
+</html>

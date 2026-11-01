@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>معرض الرماية</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap">
+<style>
+:root{
+  --bg:#efe9f7; --card:#ffffff; --ink:#2a1840; --muted:#6e5d86; --accent:#e8503a; --accent-ink:#ffffff;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#150d22; --card:#24163a; --ink:#f1e9fb; --muted:#a894c4; --accent:#ff6b55; --accent-ink:#2a0d08; color-scheme:dark}
+}
+:root[data-theme="dark"]{--bg:#150d22; --card:#24163a; --ink:#f1e9fb; --muted:#a894c4; --accent:#ff6b55; --accent-ink:#2a0d08; color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+body{margin:0;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;justify-content:center;
+  font-family:"Tajawal",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:14px 12px}
+main{width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px}
+h1{margin:0;font-size:1.6rem;font-weight:900;text-align:center}
+.hud{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat{background:var(--card);border-radius:14px;padding:6px 2px;text-align:center}
+.stat b{display:block;font-size:1.15rem;font-weight:900;white-space:nowrap}
+.stat span{font-size:.75rem;color:var(--muted)}
+.board{position:relative;border-radius:18px;overflow:hidden;background:#1b1030}
+canvas{display:block;width:100%;aspect-ratio:420/560;touch-action:none;cursor:crosshair}
+.over{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;text-align:center;padding:22px;background:rgba(15,8,28,.82);color:#fff}
+.over.hide{display:none}
+.over h2{margin:0;font-size:1.8rem;font-weight:900}
+.over p{margin:0;line-height:1.6}
+button{font:inherit;font-weight:700;border:0;cursor:pointer;border-radius:14px;background:var(--accent);color:var(--accent-ink)}
+button:focus-visible{outline:3px solid #ffc933;outline-offset:2px}
+.big{font-size:1.2rem;padding:12px 32px}
+#rl{font-size:1.1rem;padding:12px;width:100%}
+</style>
+</head>
+<body>
+<main>
+  <h1>معرض الرماية</h1>
+  <p style="margin:-6px 0 0;text-align:center;color:var(--muted);font-size:.9rem;font-weight:700">المصمم: محمد عبدالله العمري</p>
+  <div class="hud">
+    <div class="stat"><b id="sc">0</b><span>النقاط</span></div>
+    <div class="stat"><b id="tm">60</b><span>الوقت</span></div>
+    <div class="stat"><b id="cb">×1</b><span>التتابع</span></div>
+    <div class="stat"><b id="bs">0</b><span>الأفضل</span></div>
+  </div>
+  <div class="board" id="board">
+    <canvas id="c" aria-label="ساحة الرماية"></canvas>
+    <div class="over" id="ov"><h2 id="ot"></h2><p id="op"></p><button class="big" id="ob"></button></div>
+  </div>
+  <button id="rl">الذخيرة: ●●●●●●</button>
+</main>
+<script>
+(function(){
+  var W=420,H=560,$=function(i){return document.getElementById(i)};
+  var cv=$("c"),ctx=cv.getContext("2d");
+  var ROWS=[150,235,320], MAG=6;
+  var state="idle",targets,parts,marks,score,time,combo,ammo,reloading,rt,spawn,recoil,flash,best=0,last=0,aim={x:W/2,y:200},elapsed;
+  try{best=parseInt(localStorage.getItem("rimaya-best"),10)||0}catch(e){}
+
+  function resize(){
+    var w=cv.clientWidth,d=window.devicePixelRatio||1;
+    cv.width=Math.round(w*d); cv.height=Math.round(w*d*H/W);
+    var s=cv.width/W; ctx.setTransform(s,0,0,s,0,0);
+  }
+  function mult(){return Math.min(5,1+Math.floor(combo/3))}
+  function hud(){
+    $("sc").textContent=score; $("tm").textContent=Math.max(0,Math.ceil(time));
+    $("cb").textContent="×"+mult(); $("bs").textContent=best;
+    var a=""; for(var i=0;i<MAG;i++) a+=i<ammo?"●":"○";
+    $("rl").textContent=reloading?"جارٍ التعبئة…":"الذخيرة: "+a+(ammo<MAG?" (اضغط للتعبئة)":"");
+  }
+  function show(t,p,b){$("ot").textContent=t;$("op").textContent=p;$("ob").textContent=b;$("ov").classList.remove("hide")}
+  function begin(){
+    targets=[];parts=[];marks=[];score=0;time=60;combo=0;ammo=MAG;reloading=false;rt=0;spawn=0.3;recoil=0;flash=0;elapsed=0;
+    state="run";$("ov").classList.add("hide");hud();last=performance.now();requestAnimationFrame(frame);
+  }
+  function end(){
+    state="over";
+    var rec=score>best; if(rec){best=score;try{localStorage.setItem("rimaya-best",String(best))}catch(e){}}
+    hud();
+    show("انتهى الوقت","نقاطك "+score+(rec&&score>0?". رقم قياسي جديد! 🏆":". أفضل نتيجة "+best),"العب من جديد");
+  }
+  function addTarget(){
+    var row=Math.floor(Math.random()*3), r=Math.random(), type="n", rad=24, pts=10;
+    if(r<0.08){type="g";rad=18;pts=50}
+    else if(r<0.28){type="f";rad=24;pts=-30}
+    else if(r<0.55){type="s";rad=15;pts=25}
+    var dirn=row%2===0?1:-1, sp=(70+elapsed*1.4)*(type==="s"?1.7:1)*(0.85+Math.random()*0.4);
+    targets.push({x:dirn>0?-rad:W+rad,y:ROWS[row],row:row,vx:dirn*sp,type:type,r:rad,pts:pts,ph:Math.random()*6});
+  }
+  function burst(x,y,c){
+    for(var i=0;i<12;i++){var a=Math.random()*6.28,v=60+Math.random()*140;
+      parts.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:0.5,c:c,t:null})}
+  }
+  function pop(x,y,t,c){parts.push({x:x,y:y,vx:0,vy:-45,l:0.9,c:c,t:t})}
+  function reload(){
+    if(state!=="run"||reloading||ammo===MAG) return;
+    reloading=true; rt=0.9; hud();
+  }
+  function shoot(x,y){
+    if(state!=="run") return;
+    aim.x=x; aim.y=y;
+    if(reloading) return;
+    if(ammo<=0){reload();return}
+    ammo--; recoil=1; flash=0.07;
+    var hit=null;
+    for(var i=targets.length-1;i>=0;i--){
+      var t=targets[i],dx=x-t.x,dy=y-(t.y+Math.sin(t.ph)*6);
+      if(dx*dx+dy*dy<=(t.r+4)*(t.r+4)){hit=i;break}
+    }
+    if(hit===null){combo=0;marks.push({x:x,y:y,l:1})}
+    else{
+      var t=targets.splice(hit,1)[0];
+      if(t.type==="f"){combo=0;score=Math.max(0,score+t.pts);pop(t.x,t.y,"-30","#7ab8ff");burst(t.x,t.y,"#7ab8ff")}
+      else{
+        combo++; var g=t.pts*mult(); score+=g;
+        if(t.type==="g"){time=Math.min(99,time+2);pop(t.x,t.y,"+"+g+" ⏱+2","#ffc933")}
+        else pop(t.x,t.y,"+"+g,"#fff");
+        burst(t.x,t.y,t.type==="g"?"#ffc933":"#ff6b55");
+      }
+    }
+    if(ammo===0) reload();
+    hud();
+  }
+  function frame(now){
+    if(state!=="run") return;
+    var dt=Math.min(0.05,(now-last)/1000); last=now;
+    time-=dt; elapsed+=dt; spawn-=dt; recoil=Math.max(0,recoil-dt*6); flash=Math.max(0,flash-dt);
+    if(reloading){rt-=dt; if(rt<=0){reloading=false;ammo=MAG}}
+    if(spawn<=0){addTarget(); spawn=Math.max(0.35,0.85-elapsed*0.008)*(0.7+Math.random()*0.6)}
+    targets.forEach(function(t){t.x+=t.vx*dt;t.ph+=dt*3});
+    targets=targets.filter(function(t){return t.x>-60&&t.x<W+60});
+    parts.forEach(function(p){p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt});
+    parts=parts.filter(function(p){return p.l>0});
+    marks.forEach(function(m){m.l-=dt*0.8}); marks=marks.filter(function(m){return m.l>0});
+    draw(); hud();
+    if(time<=0){time=0;draw();end();return}
+    requestAnimationFrame(frame);
+  }
+  function ring(x,y,r,cols){
+    for(var i=0;i<cols.length;i++){ctx.fillStyle=cols[i];ctx.beginPath();ctx.arc(x,y,r*(1-i/cols.length),0,7);ctx.fill()}
+  }
+  function draw(){
+    var g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,"#2b1650"); g.addColorStop(1,"#5a2a6e");
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="rgba(255,255,255,.5)";
+    for(var s=0;s<14;s++){ctx.fillRect((s*97)%W,(s*53)%90+8,2,2)}
+    ROWS.forEach(function(y){ctx.fillStyle="rgba(255,255,255,.12)";ctx.fillRect(0,y+30,W,5)});
+    if(targets) targets.forEach(function(t){
+      var y=t.y+Math.sin(t.ph)*6;
+      ctx.fillStyle="#3a2a52";ctx.fillRect(t.x-2,y+t.r-2,4,36-t.r+2);
+      if(t.type==="g") ring(t.x,y,t.r,["#b8860b","#ffd84d","#b8860b","#fff3b0"]);
+      else if(t.type==="f"){ring(t.x,y,t.r,["#3d7be0","#7ab8ff"]);ctx.fillStyle="#fff";ctx.font="bold 22px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("♥",t.x,y+1)}
+      else ring(t.x,y,t.r,["#d93a2b","#ffffff","#d93a2b","#ffffff","#d93a2b"]);
+    });
+    if(marks) marks.forEach(function(m){ctx.fillStyle="rgba(255,255,255,"+(m.l*0.6)+")";ctx.beginPath();ctx.arc(m.x,m.y,4,0,7);ctx.fill()});
+    if(parts) parts.forEach(function(p){
+      ctx.globalAlpha=Math.min(1,p.l*2);
+      if(p.t){ctx.fillStyle=p.c;ctx.font="bold 20px Tajawal,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(p.t,p.x,p.y)}
+      else{ctx.fillStyle=p.c;ctx.fillRect(p.x-2,p.y-2,5,5)}
+      ctx.globalAlpha=1;
+    });
+    ctx.fillStyle="#6b3f24";ctx.fillRect(0,H-64,W,64);
+    ctx.fillStyle="#8a5632";ctx.fillRect(0,H-64,W,8);
+    var px=W/2,py=H-34,ang=Math.atan2(aim.y-py,aim.x-px);
+    ang=Math.max(-3.0,Math.min(-0.14,ang));
+    ctx.save();ctx.translate(px,py);ctx.rotate(ang);ctx.translate(-recoil*10,0);
+    ctx.fillStyle="#2b2f36";ctx.fillRect(-14,-12,86,22);
+    ctx.fillStyle="#454b55";ctx.fillRect(-14,-12,86,7);
+    ctx.fillStyle="#1a1d22";ctx.fillRect(66,-8,10,14);
+    ctx.fillStyle="#3a2418";ctx.beginPath();ctx.moveTo(-14,10);ctx.lineTo(8,10);ctx.lineTo(0,42);ctx.lineTo(-22,42);ctx.closePath();ctx.fill();
+    if(flash>0){ctx.fillStyle="#ffd84d";ctx.beginPath();ctx.moveTo(76,-2);ctx.lineTo(104,-14);ctx.lineTo(96,0);ctx.lineTo(106,12);ctx.lineTo(76,4);ctx.closePath();ctx.fill()}
+    ctx.restore();
+    ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(aim.x,aim.y,10,0,7);ctx.moveTo(aim.x-16,aim.y);ctx.lineTo(aim.x+16,aim.y);ctx.moveTo(aim.x,aim.y-16);ctx.lineTo(aim.x,aim.y+16);ctx.stroke();
+  }
+  function pos(e){var r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H}}
+  cv.addEventListener("pointerdown",function(e){e.preventDefault();var p=pos(e);shoot(p.x,p.y)});
+  cv.addEventListener("pointermove",function(e){var p=pos(e);aim.x=p.x;aim.y=p.y;if(state!=="run")draw()});
+  $("rl").addEventListener("click",reload);
+  $("ob").addEventListener("click",begin);
+  document.addEventListener("keydown",function(e){if(e.key==="r"||e.key==="R")reload()});
+  window.addEventListener("resize",function(){resize();draw()});
+
+  targets=[];parts=[];marks=[];score=0;time=60;combo=0;ammo=MAG;reloading=false;recoil=0;flash=0;elapsed=0;
+  resize();draw();hud();
+  show("معرض الرماية","60 ثانية. أصب الأهداف الحمراء والصغيرة السريعة، والذهبية تضيف وقتاً. لا تصب الأهداف الزرقاء! كل 3 إصابات متتالية ترفع المضاعف.","ابدأ");
+})();
+</script>
+</body>
+</html>

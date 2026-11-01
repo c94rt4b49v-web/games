@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>لعبة الذاكرة</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap">
+<style>
+:root{
+  --bg:#e7f4ee; --card:#ffffff; --ink:#12332a; --muted:#587a6e; --back:#1f9d73; --back2:#157a59;
+  --face:#ffffff; --done:#c9f0dd; --accent:#1f9d73; --accent-ink:#ffffff;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0a1a15; --card:#132a22; --ink:#e3f5ee; --muted:#86aa9c; --back:#2fc592; --back2:#1f8f69;
+    --face:#1c3a30; --done:#1f5a45; --accent:#2fc592; --accent-ink:#06211a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a1a15; --card:#132a22; --ink:#e3f5ee; --muted:#86aa9c; --back:#2fc592; --back2:#1f8f69;
+  --face:#1c3a30; --done:#1f5a45; --accent:#2fc592; --accent-ink:#06211a; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;justify-content:center;
+  font-family:"Tajawal",system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:16px 12px}
+main{width:100%;max-width:400px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:1.7rem;font-weight:900;text-align:center}
+.sub{margin:0;text-align:center;color:var(--muted)}
+.hud{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--card);border-radius:14px;padding:8px 2px;text-align:center}
+.stat b{display:block;font-size:1.3rem;font-weight:900}
+.stat span{font-size:.8rem;color:var(--muted)}
+.board{position:relative}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.card{aspect-ratio:1;perspective:600px;border:0;padding:0;background:none;cursor:pointer}
+.in{position:relative;display:block;width:100%;height:100%;transition:transform .35s;transform-style:preserve-3d}
+.card.open .in,.card.done .in{transform:rotateY(180deg)}
+.f,.b{position:absolute;inset:0;border-radius:16px;display:flex;align-items:center;justify-content:center;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.b{background:linear-gradient(135deg,var(--back),var(--back2));font-size:1.6rem;color:rgba(255,255,255,.7)}
+.f{background:var(--face);transform:rotateY(180deg);font-size:2.3rem}
+.card.done .f{background:var(--done)}
+.card:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.again{font:inherit;font-weight:700;font-size:1.1rem;border:0;cursor:pointer;border-radius:14px;
+  padding:12px;background:var(--accent);color:var(--accent-ink)}
+.over{position:absolute;inset:-6px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;text-align:center;padding:20px;background:rgba(6,24,18,.88);color:#fff}
+.over.hide{display:none}
+.over h2{margin:0;font-size:1.9rem;font-weight:900}
+.over p{margin:0;line-height:1.6}
+.over button{margin-top:6px;padding:12px 30px}
+@media (prefers-reduced-motion:reduce){.in{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>لعبة الذاكرة</h1>
+  <p style="margin:-6px 0 0;text-align:center;color:var(--muted);font-size:.9rem;font-weight:700">المصمم: محمد عبدالله العمري</p>
+  <p class="sub">اقلب بطاقتين، وإذا تشابهتا تبقيان مكشوفتين.</p>
+  <div class="hud">
+    <div class="stat"><b id="mv">0</b><span>المحاولات</span></div>
+    <div class="stat"><b id="pr">0/8</b><span>الأزواج</span></div>
+    <div class="stat"><b id="bs">—</b><span>أقل محاولات</span></div>
+  </div>
+  <div class="board">
+    <div class="grid" id="grid"></div>
+    <div class="over hide" id="ov"><h2>أحسنت! 🎉</h2><p id="op"></p><button class="again" id="ob">العب مرة ثانية</button></div>
+  </div>
+  <button class="again" id="re">لعبة جديدة</button>
+</main>
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i)};
+  var ICONS=["🍎","🍌","🍇","🍓","🍉","🍒","🥕","🍋"];
+  var first,lock,moves,pairs,best=0,cards;
+  try{best=parseInt(localStorage.getItem("thakira-best"),10)||0}catch(e){}
+
+  function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
+  function hud(){
+    $("mv").textContent=moves;$("pr").textContent=pairs+"/8";$("bs").textContent=best||"—";
+  }
+  function start(){
+    first=null;lock=false;moves=0;pairs=0;
+    $("ov").classList.add("hide");
+    var g=$("grid");g.innerHTML="";cards=[];
+    shuffle(ICONS.concat(ICONS)).forEach(function(ic){
+      var b=document.createElement("button");b.className="card";b.setAttribute("aria-label","بطاقة مقلوبة");
+      b.innerHTML='<span class="in"><span class="b">؟</span><span class="f">'+ic+'</span></span>';
+      b.dataset.v=ic;
+      b.addEventListener("click",function(){flip(b)});
+      g.appendChild(b);cards.push(b);
+    });
+    hud();
+  }
+  function flip(c){
+    if(lock||c.classList.contains("open")||c.classList.contains("done"))return;
+    c.classList.add("open");
+    if(!first){first=c;return}
+    moves++;lock=true;
+    var a=first,b=c;first=null;
+    if(a.dataset.v===b.dataset.v){
+      setTimeout(function(){
+        a.classList.replace("open","done");b.classList.replace("open","done");
+        pairs++;lock=false;hud();
+        if(pairs===8)win();
+      },350);
+    }else{
+      setTimeout(function(){a.classList.remove("open");b.classList.remove("open");lock=false},850);
+    }
+    hud();
+  }
+  function win(){
+    var rec=!best||moves<best;
+    if(rec){best=moves;try{localStorage.setItem("thakira-best",String(best))}catch(e){}}
+    hud();
+    $("op").textContent="خلصت اللعبة في "+moves+" محاولة"+(rec?". رقم قياسي جديد! 🏆":".");
+    setTimeout(function(){$("ov").classList.remove("hide")},400);
+  }
+  $("re").addEventListener("click",start);
+  $("ob").addEventListener("click",start);
+  start();
+})();
+</script>
+</body>
+</html>
